@@ -2046,7 +2046,8 @@ public class MobileSolarFrameApp : MonoBehaviour
     // ── Stay Line Visuals (vertical structural lines) ─────────────────
     // Stay lines are vertical lines that provide structural support
     // Each row (front/mid/back) has 4 lines connecting adjacent columns
-    // Line 1: bottom at 8ft, Line 2: top at 7ft (1ft overlap in middle)
+    // Line 0, 2: 8ft from BOTTOM going UP
+    // Line 1, 3: 7ft ABOVE the 8ft line (so from 8ft to 15ft)
     private void UpdateStayLineVisuals()
     {
         if (stayLinesRoot == null) return;
@@ -2069,8 +2070,6 @@ public class MobileSolarFrameApp : MonoBehaviour
             int row = i / StayLinesPerRow; // 0, 1, or 2 (front, mid, back)
             int lineIdxInRow = i % StayLinesPerRow; // 0, 1, 2, or 3
             
-            float topY = GetSupportTopY(row) - topPlateThick;
-            
             // Column positions for this line
             int colA = (lineIdxInRow < 2) ? 0 : 1;
             int colB = (lineIdxInRow < 2) ? 1 : 2;
@@ -2078,8 +2077,8 @@ public class MobileSolarFrameApp : MonoBehaviour
             float xPos = (ColumnXPositions[colA] + ColumnXPositions[colB]) * 0.5f;
             float zPos = SupportZPositions[row];
             
-            // Line 0, 2: 8ft height from bottom
-            // Line 1, 3: 7ft height from top (so from topY-7ft to topY)
+            // Line 0, 2: 8ft from bottom going UP
+            // Line 1, 3: 7ft ABOVE the 8ft line (from 8ft to 15ft)
             bool isUpperLine = (lineIdxInRow % 2 == 1);
             
             float lineLength;
@@ -2087,13 +2086,13 @@ public class MobileSolarFrameApp : MonoBehaviour
             
             if (isUpperLine)
             {
-                // 7ft line starting from top (topY - 7ft to topY)
+                // 7ft line starting from 8ft height going UP
                 lineLength = StayLineHeight2; // 7ft
-                startY = topY - StayLineHeight2;
+                startY = basePlateThick + bracingBottomClearance + StayLineHeight1; // 8ft + 7ft
             }
             else
             {
-                // 8ft line from bottom (basePlateThick to basePlateThick + 8ft)
+                // 8ft line from bottom going UP
                 lineLength = StayLineHeight1; // 8ft
                 startY = basePlateThick + bracingBottomClearance;
             }
@@ -2107,11 +2106,12 @@ public class MobileSolarFrameApp : MonoBehaviour
             // Position at middle of the line (centered vertically)
             float midY = startY + lineLength * 0.5f;
             
-            // Stay line runs VERTICALLY (along Y axis) between two columns
+            // C-channel runs along local X by default
+            // To make it run VERTICALLY (along world Y), rotate -90 degrees around Z
             sv.Root.localPosition = new Vector3(xPos, midY, zPos);
-            sv.Root.localRotation = Quaternion.identity; // C-channel runs along local X, which is world Y when unrotated
+            sv.Root.localRotation = Quaternion.Euler(0f, 0f, -90f); // Rotates local X to world Y
             
-            // Apply C-channel visual (runs along local X = world Y when identity rotation)
+            // Apply C-channel visual (runs along local X = world Y after rotation)
             Transform verticalChild = sv.Root.Find("Vertical");
             if (verticalChild != null)
             {
@@ -2124,8 +2124,8 @@ public class MobileSolarFrameApp : MonoBehaviour
                 ConfigureWorldText(sv.Label, false);
                 sv.Label.text = $"Stay {lineLength:0.#}ft";
                 sv.Label.rectTransform.sizeDelta = new Vector2(72f, 24f);
-                sv.Label.transform.localPosition = new Vector3(lineSize * 5f, 0f, lineSize * 2f);
-                sv.Label.transform.localRotation = Quaternion.Euler(0f, 0f, 0f);
+                sv.Label.transform.localPosition = new Vector3(0f, lineSize * 2f, lineSize * 2f);
+                sv.Label.transform.localRotation = Quaternion.Euler(90f, 0f, 0f); // Face camera
                 sv.Label.transform.localScale = Vector3.one * 0.1f;
             }
         }
@@ -2133,6 +2133,7 @@ public class MobileSolarFrameApp : MonoBehaviour
     
     // ── Angle Bracket Visuals (L-shape at column base) ─────────────────
     // L-shaped 2-inch angle brackets at the bottom of each column
+    // Web goes UP, Flange extends OUT in Z direction
     private void UpdateAngleBracketVisuals()
     {
         if (angleBracketsRoot == null) return;
@@ -2149,22 +2150,23 @@ public class MobileSolarFrameApp : MonoBehaviour
             
             float xPos = ColumnXPositions[col];
             float baseY = basePlateThick + bracingBottomClearance;
-            float zOffset = 0.5f; // offset from pillar
+            float zOffset = 0.5f; // offset from pillar in Z
             
             // L-shape position at column base
             av.Root.localPosition = new Vector3(xPos, baseY, zOffset);
-            av.Root.localRotation = Quaternion.identity;
+            // Rotate so Web (local X) points UP (world Y)
+            av.Root.localRotation = Quaternion.Euler(0f, 0f, -90f);
             
             // L-shape: vertical web (along Y) + horizontal flange (along Z)
-            // Web: vertical part - goes UP from base
+            // Web: vertical part - goes UP from base (rotated so local X = world Y)
             if (av.Web != null)
             {
                 ApplyCChannelVisual(av.Web, StayLineHeight1, angleSize, angleThick);
-                av.Web.localPosition = new Vector3(0f, StayLineHeight1 * 0.5f, 0f);
+                av.Web.localPosition = new Vector3(StayLineHeight1 * 0.5f, 0f, 0f);
                 av.Web.localRotation = Quaternion.identity;
             }
             
-            // Flange: horizontal part - extends OUTWARD in Z direction
+            // Flange: horizontal part - extends OUTWARD in world Z direction
             if (av.Flange != null)
             {
                 ApplyCChannelVisual(av.Flange, StayLineHeight1, angleSize, angleThick);
@@ -2178,8 +2180,8 @@ public class MobileSolarFrameApp : MonoBehaviour
                 ConfigureWorldText(av.Label, false);
                 av.Label.text = "L-Angle";
                 av.Label.rectTransform.sizeDelta = new Vector2(72f, 24f);
-                av.Label.transform.localPosition = new Vector3(0f, StayLineHeight1 + 0.5f, StayLineHeight1 * 0.5f);
-                av.Label.transform.localRotation = Quaternion.identity;
+                av.Label.transform.localPosition = new Vector3(StayLineHeight1 + 0.5f, 0f, StayLineHeight1 * 0.5f);
+                av.Label.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
                 av.Label.transform.localScale = Vector3.one * 0.1f;
             }
         }
