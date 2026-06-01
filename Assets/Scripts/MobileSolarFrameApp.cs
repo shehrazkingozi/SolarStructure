@@ -2054,12 +2054,6 @@ public class MobileSolarFrameApp : MonoBehaviour
         // Only show stay lines when in StayLine mode
         bool showStayLines = bracingMode == BracingMode.StayLines;
         
-        // Stay line layout:
-        // Row 0 (front/sup 0): Lines 0-3 at heights 8ft, 7ft, 8ft, 7ft
-        // Row 1 (mid/sup 1): Lines 4-7 at heights 8ft, 7ft, 8ft, 7ft  
-        // Row 2 (back/sup 2): Lines 8-11 at heights 8ft, 7ft, 8ft, 7ft
-        // Each row has 4 lines connecting col0-col1 (x2) and col1-col2 (x2)
-        
         float lineSize = bracingSize;
         float lineThick = bracingThick;
         
@@ -2072,30 +2066,37 @@ public class MobileSolarFrameApp : MonoBehaviour
             if (!showStayLines) continue;
             
             // Determine which row and line type
-            int row = i / StayLinesPerRow; // 0, 1, or 2
+            int row = i / StayLinesPerRow; // 0, 1, or 2 (front, mid, back)
             int lineIdxInRow = i % StayLinesPerRow; // 0, 1, 2, or 3
             
-            float height = (lineIdxInRow % 2 == 0) ? StayLineHeight1 : StayLineHeight2;
-            bool isUpperLine = (lineIdxInRow % 2 == 1);
+            float topY = GetSupportTopY(row) - topPlateThick;
             
-            float supportHeight = GetSupportHeight(row);
-            
-            // Column positions
+            // Column positions for this line
             int colA = (lineIdxInRow < 2) ? 0 : 1;
             int colB = (lineIdxInRow < 2) ? 1 : 2;
             
-            float xA = ColumnXPositions[colA];
-            float xB = ColumnXPositions[colB];
+            float xPos = (ColumnXPositions[colA] + ColumnXPositions[colB]) * 0.5f;
             float zPos = SupportZPositions[row];
-            float topY = GetSupportTopY(row) - topPlateThick;
             
-            // Start and end positions for the stay line
-            float startY = isUpperLine ? topY - StayLineHeight1 : basePlateThick + bracingBottomClearance;
-            float endY = isUpperLine ? topY : startY + height;
+            // Line 0, 2: 8ft height from bottom
+            // Line 1, 3: 7ft height from top (so from topY-7ft to topY)
+            bool isUpperLine = (lineIdxInRow % 2 == 1);
             
-            // Position for the line (centered vertically in the bay)
-            float midY = (startY + endY) * 0.5f;
-            float lineLength = endY - startY;
+            float lineLength;
+            float startY;
+            
+            if (isUpperLine)
+            {
+                // 7ft line starting from top (topY - 7ft to topY)
+                lineLength = StayLineHeight2; // 7ft
+                startY = topY - StayLineHeight2;
+            }
+            else
+            {
+                // 8ft line from bottom (basePlateThick to basePlateThick + 8ft)
+                lineLength = StayLineHeight1; // 8ft
+                startY = basePlateThick + bracingBottomClearance;
+            }
             
             if (lineLength < 0.001f)
             {
@@ -2103,16 +2104,17 @@ public class MobileSolarFrameApp : MonoBehaviour
                 continue;
             }
             
-            // The stay line runs along X axis between two columns
-            float midX = (xA + xB) * 0.5f;
-            sv.Root.localPosition = new Vector3(midX, midY, zPos);
-            sv.Root.localRotation = Quaternion.identity;
+            // Position at middle of the line (centered vertically)
+            float midY = startY + lineLength * 0.5f;
             
-            // Find the Vertical child which has C-channel structure (Back, Top, Bot)
+            // Stay line runs VERTICALLY (along Y axis) between two columns
+            sv.Root.localPosition = new Vector3(xPos, midY, zPos);
+            sv.Root.localRotation = Quaternion.identity; // C-channel runs along local X, which is world Y when unrotated
+            
+            // Apply C-channel visual (runs along local X = world Y when identity rotation)
             Transform verticalChild = sv.Root.Find("Vertical");
             if (verticalChild != null)
             {
-                // Apply C-channel visual to the vertical part
                 ApplyCChannelVisual(verticalChild, lineLength, lineSize, lineThick);
             }
             
@@ -2120,9 +2122,9 @@ public class MobileSolarFrameApp : MonoBehaviour
             if (sv.Label != null)
             {
                 ConfigureWorldText(sv.Label, false);
-                sv.Label.text = $"Stay {height:0.#}ft";
+                sv.Label.text = $"Stay {lineLength:0.#}ft";
                 sv.Label.rectTransform.sizeDelta = new Vector2(72f, 24f);
-                sv.Label.transform.localPosition = new Vector3(0f, lineSize * 20f, 0f);
+                sv.Label.transform.localPosition = new Vector3(lineSize * 5f, 0f, lineSize * 2f);
                 sv.Label.transform.localRotation = Quaternion.Euler(0f, 0f, 0f);
                 sv.Label.transform.localScale = Vector3.one * 0.1f;
             }
@@ -2146,26 +2148,25 @@ public class MobileSolarFrameApp : MonoBehaviour
             av.Root.gameObject.SetActive(true);
             
             float xPos = ColumnXPositions[col];
-            float baseY = basePlateThick + concretePillarHeight;
+            float baseY = basePlateThick + bracingBottomClearance;
+            float zOffset = 0.5f; // offset from pillar
             
             // L-shape position at column base
-            av.Root.localPosition = new Vector3(xPos, baseY, 0f);
+            av.Root.localPosition = new Vector3(xPos, baseY, zOffset);
             av.Root.localRotation = Quaternion.identity;
             
-            // L-shape: vertical web + horizontal flange
-            // Web: vertical part (C-channel along Y axis)
-            // Flange: horizontal part extending outward in Z direction
+            // L-shape: vertical web (along Y) + horizontal flange (along Z)
+            // Web: vertical part - goes UP from base
             if (av.Web != null)
             {
-                // Vertical web runs along Y axis - apply C-channel
                 ApplyCChannelVisual(av.Web, StayLineHeight1, angleSize, angleThick);
                 av.Web.localPosition = new Vector3(0f, StayLineHeight1 * 0.5f, 0f);
                 av.Web.localRotation = Quaternion.identity;
             }
             
+            // Flange: horizontal part - extends OUTWARD in Z direction
             if (av.Flange != null)
             {
-                // Horizontal flange extends outward in Z direction - apply C-channel
                 ApplyCChannelVisual(av.Flange, StayLineHeight1, angleSize, angleThick);
                 av.Flange.localPosition = new Vector3(0f, 0f, StayLineHeight1 * 0.5f);
                 av.Flange.localRotation = Quaternion.identity;
@@ -2443,20 +2444,32 @@ public class MobileSolarFrameApp : MonoBehaviour
         // ── Stay Line braces — per-line stress ────────────────────────────
         if (bracingMode == BracingMode.StayLines)
         {
+            // Calculate stress based on pillar height and load
+            float maxHeight = Mathf.Max(heightFront, heightMid, heightBack);
+            
             for (int i = 0; i < StayLineCount; i++)
             {
                 StayLineVisual sv = stayLineVisuals[i];
                 if (sv == null || sv.Root == null || !sv.Root.gameObject.activeSelf) continue;
                 
-                // Stay lines carry tension forces vertically
-                float tensionForce = windLoad * 0.8f;
-                float maxTension = windLoad * 1.5f;
-                float stress = Mathf.Clamp01(tensionForce / maxTension);
+                int row = i / StayLinesPerRow;
+                float supportHeight = GetSupportHeight(row);
+                
+                // Stay lines are vertical tension members
+                // Higher lines (7ft from top) have more tension
+                bool isUpperLine = (i % 2 == 1);
+                
+                // Calculate stress based on position and load
+                float heightFactor = supportHeight / maxHeight;
+                float positionFactor = isUpperLine ? 0.8f : 0.5f;
+                float loadFactor = loadPerPillar / 100f; // normalize load
+                
+                float stress = Mathf.Clamp01(heightFactor * positionFactor * loadFactor * 2f);
                 
                 // Apply stress color to the stay line (C-channel: Back, Top, Bot)
                 Transform verticalChild = sv.Root.Find("Vertical");
                 if (verticalChild != null)
-                    ColorCChannel(verticalChild, stress, new Color(0.5f,0.55f,0.6f), warnColor, dangerColor);
+                    ColorCChannel(verticalChild, stress, new Color(0.3f,0.6f,0.4f), warnColor, dangerColor);
             }
             
             // ── Angle brackets — base support stress ───────────────────────
@@ -2466,11 +2479,13 @@ public class MobileSolarFrameApp : MonoBehaviour
                 if (av == null || av.Root == null || !av.Root.gameObject.activeSelf) continue;
                 
                 // Angle brackets bear the load transfer from pillars to concrete
-                float bracketStress = loadPerPillar / totalLoad * 1.5f;
-                float stress = Mathf.Clamp01(bracketStress);
+                // Stress is higher at outer columns due to moment
+                float colFactor = (col == 0 || col == 2) ? 1.2f : 1.0f;
+                float baseStress = loadPerPillar / 100f;
+                float stress = Mathf.Clamp01(baseStress * colFactor * 1.5f);
                 
-                if (av.Web != null) ColorCChannel(av.Web, stress, new Color(0.6f,0.65f,0.7f), warnColor, dangerColor);
-                if (av.Flange != null) ColorCChannel(av.Flange, stress * 0.8f, new Color(0.6f,0.65f,0.7f), warnColor, dangerColor);
+                if (av.Web != null) ColorCChannel(av.Web, stress, new Color(0.4f,0.5f,0.6f), warnColor, dangerColor);
+                if (av.Flange != null) ColorCChannel(av.Flange, stress * 0.9f, new Color(0.4f,0.5f,0.6f), warnColor, dangerColor);
             }
         }
 
