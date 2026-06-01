@@ -2107,9 +2107,10 @@ public class MobileSolarFrameApp : MonoBehaviour
             float midY = startY + lineLength * 0.5f;
             
             // C-channel runs along local X by default
-            // To make it run VERTICALLY (along world Y), rotate -90 degrees around Z
+            // To make it run VERTICALLY (along world Y), rotate +90 degrees around Z
+            // +90 rotation: local X points to world +Y
             sv.Root.localPosition = new Vector3(xPos, midY, zPos);
-            sv.Root.localRotation = Quaternion.Euler(0f, 0f, -90f); // Rotates local X to world Y
+            sv.Root.localRotation = Quaternion.Euler(0f, 0f, 90f);
             
             // Apply C-channel visual (runs along local X = world Y after rotation)
             Transform verticalChild = sv.Root.Find("Vertical");
@@ -2133,7 +2134,7 @@ public class MobileSolarFrameApp : MonoBehaviour
     
     // ── Angle Bracket Visuals (L-shape at column base) ─────────────────
     // L-shaped 2-inch angle brackets at the bottom of each column
-    // Web goes UP, Flange extends OUT in Z direction
+    // Web goes UP (world Y), Flange extends OUT in world Z
     private void UpdateAngleBracketVisuals()
     {
         if (angleBracketsRoot == null) return;
@@ -2154,11 +2155,11 @@ public class MobileSolarFrameApp : MonoBehaviour
             
             // L-shape position at column base
             av.Root.localPosition = new Vector3(xPos, baseY, zOffset);
-            // Rotate so Web (local X) points UP (world Y)
-            av.Root.localRotation = Quaternion.Euler(0f, 0f, -90f);
+            // Rotate +90 degrees so local X points UP (world Y)
+            av.Root.localRotation = Quaternion.Euler(0f, 0f, 90f);
             
             // L-shape: vertical web (along Y) + horizontal flange (along Z)
-            // Web: vertical part - goes UP from base (rotated so local X = world Y)
+            // Web: vertical part - goes UP from base (local X = world Y after rotation)
             if (av.Web != null)
             {
                 ApplyCChannelVisual(av.Web, StayLineHeight1, angleSize, angleThick);
@@ -2166,7 +2167,7 @@ public class MobileSolarFrameApp : MonoBehaviour
                 av.Web.localRotation = Quaternion.identity;
             }
             
-            // Flange: horizontal part - extends OUTWARD in world Z direction
+            // Flange: horizontal part - extends OUTWARD in world Z direction (local Z)
             if (av.Flange != null)
             {
                 ApplyCChannelVisual(av.Flange, StayLineHeight1, angleSize, angleThick);
