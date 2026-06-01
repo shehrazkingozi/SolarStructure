@@ -1667,9 +1667,8 @@ public class MobileSolarFrameApp : MonoBehaviour
             lineRoot = new GameObject($"StayLine_{lineIdx}").transform;
             lineRoot.SetParent(stayLinesRoot, false);
         }
-        // Create L-shaped stay line with 2 segments: vertical + top flange
+        // Create vertical line with C-channel profile
         Transform verticalPart = GetOrCreateCChannel(lineRoot, "Vertical");
-        Transform topFlange = GetOrCreateCChannel(lineRoot, "TopFlange");
         return new StayLineVisual
         {
             Root = lineRoot,
@@ -2076,18 +2075,10 @@ public class MobileSolarFrameApp : MonoBehaviour
             int row = i / StayLinesPerRow; // 0, 1, or 2
             int lineIdxInRow = i % StayLinesPerRow; // 0, 1, 2, or 3
             
-            // Line definitions for each row:
-            // lineIdx 0: col0-col1 with 8ft height from bottom
-            // lineIdx 1: col0-col1 with 7ft height from bottom (starts at 8ft, goes to 15ft)
-            // lineIdx 2: col1-col2 with 8ft height from bottom
-            // lineIdx 3: col1-col2 with 7ft height from bottom
-            
             float height = (lineIdxInRow % 2 == 0) ? StayLineHeight1 : StayLineHeight2;
             bool isUpperLine = (lineIdxInRow % 2 == 1);
             
-            // For lines 1 and 3 (upper), we need to offset the height from the top
             float supportHeight = GetSupportHeight(row);
-            float actualHeight = isUpperLine ? supportHeight - StayLineHeight2 : height;
             
             // Column positions
             int colA = (lineIdxInRow < 2) ? 0 : 1;
@@ -2117,8 +2108,13 @@ public class MobileSolarFrameApp : MonoBehaviour
             sv.Root.localPosition = new Vector3(midX, midY, zPos);
             sv.Root.localRotation = Quaternion.identity;
             
-            // Apply C-channel visual with vertical orientation
-            ApplyHGirderVisual(sv.Root, lineLength, lineSize, lineThick, false);
+            // Find the Vertical child which has C-channel structure (Back, Top, Bot)
+            Transform verticalChild = sv.Root.Find("Vertical");
+            if (verticalChild != null)
+            {
+                // Apply C-channel visual to the vertical part
+                ApplyCChannelVisual(verticalChild, lineLength, lineSize, lineThick);
+            }
             
             // Update label
             if (sv.Label != null)
@@ -2157,21 +2153,21 @@ public class MobileSolarFrameApp : MonoBehaviour
             av.Root.localRotation = Quaternion.identity;
             
             // L-shape: vertical web + horizontal flange
-            // Web: vertical part mounted to pillar
-            // Flange: horizontal part extending outward from column
+            // Web: vertical part (C-channel along Y axis)
+            // Flange: horizontal part extending outward in Z direction
             if (av.Web != null)
             {
-                // Vertical web runs along Y axis
-                ApplyHGirderVisual(av.Web, StayLineHeight1, angleSize, angleThick, false);
-                av.Web.localPosition = new Vector3(0f,StayLineHeight1*0.5f, 0f);
+                // Vertical web runs along Y axis - apply C-channel
+                ApplyCChannelVisual(av.Web, StayLineHeight1, angleSize, angleThick);
+                av.Web.localPosition = new Vector3(0f, StayLineHeight1 * 0.5f, 0f);
                 av.Web.localRotation = Quaternion.identity;
             }
             
             if (av.Flange != null)
             {
-                // Horizontal flange extends outward in Z direction
-                ApplyHGirderVisual(av.Flange, StayLineHeight1, angleSize, angleThick, true);
-                av.Flange.localPosition = new Vector3(0f, 0f, StayLineHeight1*0.5f);
+                // Horizontal flange extends outward in Z direction - apply C-channel
+                ApplyCChannelVisual(av.Flange, StayLineHeight1, angleSize, angleThick);
+                av.Flange.localPosition = new Vector3(0f, 0f, StayLineHeight1 * 0.5f);
                 av.Flange.localRotation = Quaternion.identity;
             }
             
@@ -2457,8 +2453,10 @@ public class MobileSolarFrameApp : MonoBehaviour
                 float maxTension = windLoad * 1.5f;
                 float stress = Mathf.Clamp01(tensionForce / maxTension);
                 
-                // Apply stress color to the stay line
-                ApplyHGirderStress(sv.Root, stress, new Color(0.5f,0.55f,0.6f), warnColor, dangerColor);
+                // Apply stress color to the stay line (C-channel: Back, Top, Bot)
+                Transform verticalChild = sv.Root.Find("Vertical");
+                if (verticalChild != null)
+                    ColorCChannel(verticalChild, stress, new Color(0.5f,0.55f,0.6f), warnColor, dangerColor);
             }
             
             // ── Angle brackets — base support stress ───────────────────────
@@ -2471,8 +2469,8 @@ public class MobileSolarFrameApp : MonoBehaviour
                 float bracketStress = loadPerPillar / totalLoad * 1.5f;
                 float stress = Mathf.Clamp01(bracketStress);
                 
-                if (av.Web != null) ApplyHGirderStress(av.Web, stress, new Color(0.6f,0.65f,0.7f), warnColor, dangerColor);
-                if (av.Flange != null) ApplyHGirderStress(av.Flange, stress * 0.8f, new Color(0.6f,0.65f,0.7f), warnColor, dangerColor);
+                if (av.Web != null) ColorCChannel(av.Web, stress, new Color(0.6f,0.65f,0.7f), warnColor, dangerColor);
+                if (av.Flange != null) ColorCChannel(av.Flange, stress * 0.8f, new Color(0.6f,0.65f,0.7f), warnColor, dangerColor);
             }
         }
 
