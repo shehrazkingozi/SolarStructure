@@ -2508,8 +2508,8 @@ public class MobileSolarFrameApp : MonoBehaviour
             int stayLineCount = StayLinesPerRow; // 4 lines per row
             rf *= Mathf.Pow(0.70f, stayLineCount);
             
-            // Stay lines start from 8ft, so there's less unbraced length at base
-            float stayLineStart = StayLineHeight2; // 7ft from bottom
+            // Upper stay lines start at 14ft (8ft + 6ft), so there's less unbraced length at base
+            float stayLineStart = StayLineHeight1 + StayLineGap; // 14ft from bottom
             rf *= Mathf.Lerp(1.0f, 0.6f, Mathf.Clamp01(stayLineStart / GetSupportHeight(sup)));
         }
         else
