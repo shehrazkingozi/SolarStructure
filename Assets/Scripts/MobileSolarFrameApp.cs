@@ -47,9 +47,9 @@ public class MobileSolarFrameApp : MonoBehaviour
     private const int XBayCount = 12;
     
     // Stay line heights from bottom (in feet)
-    private const float StayLineHeight1 = 8f;
-    private const float StayLineHeight2 = 7f;
-    // Lines per row (Z-plane bays have 4 lines each)
+    private const float StayLineHeight1 = 8f;      // First line height from bottom
+    private const float StayLineGap = 6f;          // Gap between first and second line
+    // Lines per row (2 lines col0-col1 + 2 lines col1-col2)
     private const int StayLinesPerRow = 4;
     // Total stay line count: 3 rows (front/mid/back) x 4 lines = 12
     private const int StayLineCount = 12;
@@ -2043,11 +2043,13 @@ public class MobileSolarFrameApp : MonoBehaviour
         // Materials and stress colors are applied by RefreshStructure after all updates
     }
     
-    // ── Stay Line Visuals (vertical structural lines) ─────────────────
-    // Stay lines are vertical lines that provide structural support
-    // Each row (front/mid/back) has 4 lines connecting adjacent columns
-    // Line 0, 2: 8ft from BOTTOM going UP
-    // Line 1, 3: 7ft ABOVE the 8ft line (so from 8ft to 15ft)
+    // ── Stay Line Visuals (horizontal structural lines) ─────────────────
+    // Stay lines are horizontal C-channels that connect adjacent columns
+    // Each row has 4 lines:
+    //   Line 0: col0-col1 at 8ft from bottom
+    //   Line 1: col0-col1 at 8ft + 6ft = 14ft from bottom
+    //   Line 2: col1-col2 at 8ft from bottom  
+    //   Line 3: col1-col2 at 8ft + 6ft = 14ft from bottom
     private void UpdateStayLineVisuals()
     {
         if (stayLinesRoot == null) return;
@@ -2074,28 +2076,18 @@ public class MobileSolarFrameApp : MonoBehaviour
             int colA = (lineIdxInRow < 2) ? 0 : 1;
             int colB = (lineIdxInRow < 2) ? 1 : 2;
             
-            float xPos = (ColumnXPositions[colA] + ColumnXPositions[colB]) * 0.5f;
+            float xA = ColumnXPositions[colA];
+            float xB = ColumnXPositions[colB];
             float zPos = SupportZPositions[row];
             
-            // Line 0, 2: 8ft from bottom going UP
-            // Line 1, 3: 7ft ABOVE the 8ft line (from 8ft to 15ft)
+            // Line 0, 2: at 8ft from bottom
+            // Line 1, 3: at 8ft + 6ft = 14ft from bottom
             bool isUpperLine = (lineIdxInRow % 2 == 1);
             
-            float lineLength;
-            float startY;
+            float yPos = basePlateThick + bracingBottomClearance + (isUpperLine ? (StayLineHeight1 + StayLineGap) : StayLineHeight1);
             
-            if (isUpperLine)
-            {
-                // 7ft line starting from 8ft height going UP
-                lineLength = StayLineHeight2; // 7ft
-                startY = basePlateThick + bracingBottomClearance + StayLineHeight1; // 8ft + 7ft
-            }
-            else
-            {
-                // 8ft line from bottom going UP
-                lineLength = StayLineHeight1; // 8ft
-                startY = basePlateThick + bracingBottomClearance;
-            }
+            // Stay line length = distance between columns
+            float lineLength = xB - xA;
             
             if (lineLength < 0.001f)
             {
@@ -2103,16 +2095,11 @@ public class MobileSolarFrameApp : MonoBehaviour
                 continue;
             }
             
-            // Position at middle of the line (centered vertically)
-            float midY = startY + lineLength * 0.5f;
+            // Stay line is HORIZONTAL - centered between columns at given Y height
+            sv.Root.localPosition = new Vector3((xA + xB) * 0.5f, yPos, zPos);
+            sv.Root.localRotation = Quaternion.identity; // C-channel runs along local X (world X) - horizontal
             
-            // C-channel runs along local X by default
-            // To make it run VERTICALLY (along world Y), rotate +90 degrees around Z
-            // +90 rotation: local X points to world +Y
-            sv.Root.localPosition = new Vector3(xPos, midY, zPos);
-            sv.Root.localRotation = Quaternion.Euler(0f, 0f, 90f);
-            
-            // Apply C-channel visual (runs along local X = world Y after rotation)
+            // Apply C-channel visual (horizontal along X)
             Transform verticalChild = sv.Root.Find("Vertical");
             if (verticalChild != null)
             {
@@ -2123,24 +2110,27 @@ public class MobileSolarFrameApp : MonoBehaviour
             if (sv.Label != null)
             {
                 ConfigureWorldText(sv.Label, false);
-                sv.Label.text = $"Stay {lineLength:0.#}ft";
+                sv.Label.text = $"Stay {(isUpperLine ? 14f : 8f):0.#}ft";
                 sv.Label.rectTransform.sizeDelta = new Vector2(72f, 24f);
                 sv.Label.transform.localPosition = new Vector3(0f, lineSize * 2f, lineSize * 2f);
-                sv.Label.transform.localRotation = Quaternion.Euler(90f, 0f, 0f); // Face camera
+                sv.Label.transform.localRotation = Quaternion.Euler(0f, 0f, 0f);
                 sv.Label.transform.localScale = Vector3.one * 0.1f;
             }
         }
     }
     
     // ── Angle Bracket Visuals (L-shape at column base) ─────────────────
-    // L-shaped 2-inch angle brackets at the bottom of each column
-    // Web goes UP (world Y), Flange extends OUT in world Z
+    // L-shaped angle brackets at the bottom of each column
+    // Web: vertical part going UP (along Y)
+    // Flange: horizontal part extending in Z direction (like a footer)
     private void UpdateAngleBracketVisuals()
     {
         if (angleBracketsRoot == null) return;
         
         float angleSize = 2f / 12f; // 2 inches
         float angleThick = 0.02f;
+        float webHeight = StayLineHeight1 + StayLineGap; // Total height of web (8 + 6 = 14ft)
+        float flangeLength = 2f; // 2 feet flange extending in Z
         
         for (int col = 0; col < AngleBracketCount; col++)
         {
@@ -2151,27 +2141,26 @@ public class MobileSolarFrameApp : MonoBehaviour
             
             float xPos = ColumnXPositions[col];
             float baseY = basePlateThick + bracingBottomClearance;
-            float zOffset = 0.5f; // offset from pillar in Z
+            float zPos = 0f;
             
             // L-shape position at column base
-            av.Root.localPosition = new Vector3(xPos, baseY, zOffset);
-            // Rotate +90 degrees so local X points UP (world Y)
-            av.Root.localRotation = Quaternion.Euler(0f, 0f, 90f);
+            av.Root.localPosition = new Vector3(xPos, baseY, zPos);
+            av.Root.localRotation = Quaternion.identity;
             
-            // L-shape: vertical web (along Y) + horizontal flange (along Z)
-            // Web: vertical part - goes UP from base (local X = world Y after rotation)
+            // Web: vertical part - goes UP from base
+            // Rotate +90 degrees so local X (C-channel) points UP (world Y)
             if (av.Web != null)
             {
-                ApplyCChannelVisual(av.Web, StayLineHeight1, angleSize, angleThick);
-                av.Web.localPosition = new Vector3(StayLineHeight1 * 0.5f, 0f, 0f);
-                av.Web.localRotation = Quaternion.identity;
+                ApplyCChannelVisual(av.Web, webHeight, angleSize, angleThick);
+                av.Web.localPosition = new Vector3(0f, webHeight * 0.5f, 0f);
+                av.Web.localRotation = Quaternion.Euler(0f, 0f, 90f);
             }
             
-            // Flange: horizontal part - extends OUTWARD in world Z direction (local Z)
+            // Flange: horizontal part - extends OUTWARD in Z direction
             if (av.Flange != null)
             {
-                ApplyCChannelVisual(av.Flange, StayLineHeight1, angleSize, angleThick);
-                av.Flange.localPosition = new Vector3(0f, 0f, StayLineHeight1 * 0.5f);
+                ApplyCChannelVisual(av.Flange, flangeLength, angleSize, angleThick);
+                av.Flange.localPosition = new Vector3(0f, 0f, flangeLength * 0.5f);
                 av.Flange.localRotation = Quaternion.identity;
             }
             
@@ -2181,8 +2170,8 @@ public class MobileSolarFrameApp : MonoBehaviour
                 ConfigureWorldText(av.Label, false);
                 av.Label.text = "L-Angle";
                 av.Label.rectTransform.sizeDelta = new Vector2(72f, 24f);
-                av.Label.transform.localPosition = new Vector3(StayLineHeight1 + 0.5f, 0f, StayLineHeight1 * 0.5f);
-                av.Label.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+                av.Label.transform.localPosition = new Vector3(0f, webHeight + 0.5f, flangeLength * 0.5f);
+                av.Label.transform.localRotation = Quaternion.Euler(0f, 0f, 0f);
                 av.Label.transform.localScale = Vector3.one * 0.1f;
             }
         }
@@ -2447,27 +2436,20 @@ public class MobileSolarFrameApp : MonoBehaviour
         // ── Stay Line braces — per-line stress ────────────────────────────
         if (bracingMode == BracingMode.StayLines)
         {
-            // Calculate stress based on pillar height and load
-            float maxHeight = Mathf.Max(heightFront, heightMid, heightBack);
-            
             for (int i = 0; i < StayLineCount; i++)
             {
                 StayLineVisual sv = stayLineVisuals[i];
                 if (sv == null || sv.Root == null || !sv.Root.gameObject.activeSelf) continue;
                 
                 int row = i / StayLinesPerRow;
-                float supportHeight = GetSupportHeight(row);
-                
-                // Stay lines are vertical tension members
-                // Higher lines (7ft from top) have more tension
                 bool isUpperLine = (i % 2 == 1);
                 
-                // Calculate stress based on position and load
-                float heightFactor = supportHeight / maxHeight;
-                float positionFactor = isUpperLine ? 0.8f : 0.5f;
-                float loadFactor = loadPerPillar / 100f; // normalize load
+                // Stay lines are horizontal tension members
+                // Upper lines (14ft) have more tension due to lever arm
+                float heightFactor = isUpperLine ? 1.0f : 0.7f;
+                float loadFactor = loadPerPillar / 100f;
                 
-                float stress = Mathf.Clamp01(heightFactor * positionFactor * loadFactor * 2f);
+                float stress = Mathf.Clamp01(heightFactor * loadFactor * 1.5f);
                 
                 // Apply stress color to the stay line (C-channel: Back, Top, Bot)
                 Transform verticalChild = sv.Root.Find("Vertical");
@@ -2476,6 +2458,7 @@ public class MobileSolarFrameApp : MonoBehaviour
             }
             
             // ── Angle brackets — base support stress ───────────────────────
+            float webHeight = StayLineHeight1 + StayLineGap;
             for (int col = 0; col < AngleBracketCount; col++)
             {
                 AngleBracketVisual av = angleBracketVisuals[col];
