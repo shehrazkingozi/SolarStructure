@@ -45,6 +45,16 @@ public class MobileSolarFrameApp : MonoBehaviour
     //   Side  bays col2 (X-plane): sup0→sup1, sup1→sup2                   => 2 bays  [10,11]
     // Total individual X-bays = 12, each has 2 diagonals => max 24 brace objects
     private const int XBayCount = 12;
+    
+    // Stay line heights from bottom (in feet)
+    private const float StayLineHeight1 = 8f;
+    private const float StayLineHeight2 = 7f;
+    // Lines per row (Z-plane bays have 4 lines each)
+    private const int StayLinesPerRow = 4;
+    // Total stay line count: 3 rows (front/mid/back) x 4 lines = 12
+    private const int StayLineCount = 12;
+    // L-shaped angle bracket count (one per column at bottom)
+    private const int AngleBracketCount = 3;
 
     private const string StructureRootName  = "Solar_Mobile_Structure";
     private const string PillarsRootName    = "Pillars";
@@ -111,6 +121,22 @@ public class MobileSolarFrameApp : MonoBehaviour
         public Transform DiagB; // shown only when showXCrossing is true
         public TMP_Text  LabelA;
         public TMP_Text  LabelB;
+    }
+    
+    // Stay line visual - vertical structural lines
+    private sealed class StayLineVisual
+    {
+        public Transform Root;
+        public TMP_Text Label;
+    }
+    
+    // L-shaped angle bracket visual for column base
+    private sealed class AngleBracketVisual
+    {
+        public Transform Root;
+        public Transform Web;  // vertical part
+        public Transform Flange; // horizontal base part (L-shape)
+        public TMP_Text Label;
     }
 
     private sealed class BeamVisual  { public Transform Root; }
@@ -184,6 +210,9 @@ public class MobileSolarFrameApp : MonoBehaviour
     // ── Frame Settings ───────────────────────────────────────────────────
     [Header("Frame Settings")]
     [SerializeField] private bool    showConcretePillars = true;
+    public enum BracingMode { XCrossing, StayLines }
+    [SerializeField] private BracingMode bracingMode = BracingMode.XCrossing;
+    [SerializeField] private Toggle bracingModeToggle;
     [SerializeField] private bool[]  bayEnabled          = new bool[XBayCount] { true,true,true,true,true,true,true,true,true,true,true,true };
     [SerializeField] private bool[]  bayXEnabled         = new bool[XBayCount] { true,true,true,true,true,true,true,true,true,true,true,true };
     [SerializeField] private float   panelsOffset        = 0f;
@@ -232,10 +261,14 @@ public class MobileSolarFrameApp : MonoBehaviour
     private readonly RailVisual[]   railVisuals   = new RailVisual[RailCount];
     private readonly PanelVisual[]  panelVisuals  = new PanelVisual[PanelRowCount * PanelColumnCount];
     private readonly XBayVisual[]   xBayVisuals   = new XBayVisual[XBayCount];
+    private readonly StayLineVisual[] stayLineVisuals = new StayLineVisual[StayLineCount];
+    private readonly AngleBracketVisual[] angleBracketVisuals = new AngleBracketVisual[AngleBracketCount];
 
     private Camera               mainCamera;
     private MaterialPropertyBlock stressPropertyBlock;
     private Transform            bracingRoot;
+    private Transform            stayLinesRoot;
+    private Transform            angleBracketsRoot;
     private Canvas               uiCanvas;
     private TMP_FontAsset        defaultFont;
     private bool                 uiInitialized;
@@ -287,6 +320,23 @@ public class MobileSolarFrameApp : MonoBehaviour
         mainCamera           = GetComponent<Camera>();
         stressPropertyBlock  = new MaterialPropertyBlock();
         EnsureBayArraySizes();
+    }
+    
+    // Public method to force rebuild structure (called from editor menu)
+    public void ForceRebuildStructure()
+    {
+        // Reset warning flags so we get fresh feedback
+        structureMissingWarningShown = false;
+        structureShapeWarningShown = false;
+        uiInitialized = false;
+        
+        // Reinitialize all bindings and refresh
+        TryAutoAssignSceneReferences();
+        InitializeUiBindings();
+        InitializeStructureBindings();
+        RefreshAllControls();
+        RefreshStructure();
+        ApplyCameraTransform();
     }
 
     private void OnEnable()
@@ -360,7 +410,7 @@ public class MobileSolarFrameApp : MonoBehaviour
             pv.Label.transform.LookAt(camPos);
             pv.Label.transform.Rotate(0f, 180f, 0f);
         }
-        // Brace labels
+        // Brace labels (X-Crossing mode)
         for (int i = 0; i < XBayCount; i++)
         {
             var xv = xBayVisuals[i];
@@ -369,6 +419,20 @@ public class MobileSolarFrameApp : MonoBehaviour
             { xv.LabelA.transform.LookAt(camPos); xv.LabelA.transform.Rotate(0f, 180f, 0f); }
             if (xv.LabelB != null && xv.DiagB != null && xv.DiagB.gameObject.activeSelf)
             { xv.LabelB.transform.LookAt(camPos); xv.LabelB.transform.Rotate(0f, 180f, 0f); }
+        }
+        // Stay line labels
+        for (int i = 0; i < StayLineCount; i++)
+        {
+            var sl = stayLineVisuals[i];
+            if (sl?.Label != null && sl.Root != null && sl.Root.gameObject.activeSelf)
+            { sl.Label.transform.LookAt(camPos); sl.Label.transform.Rotate(0f, 180f, 0f); }
+        }
+        // Angle bracket labels
+        for (int i = 0; i < AngleBracketCount; i++)
+        {
+            var ab = angleBracketVisuals[i];
+            if (ab?.Label != null && ab.Root != null && ab.Root.gameObject.activeSelf)
+            { ab.Label.transform.LookAt(camPos); ab.Label.transform.Rotate(0f, 180f, 0f); }
         }
     }
 
@@ -562,6 +626,8 @@ public class MobileSolarFrameApp : MonoBehaviour
             panelToggleButtonLabel = panelToggleButton.GetComponentInChildren<TMP_Text>(true);
         if (showConcreteFootingsToggle == null)
         { var o = GameObject.Find("Toggle_ShowConcreteFootings"); if (o) showConcreteFootingsToggle = o.GetComponent<UnityEngine.UI.Toggle>(); }
+        if (bracingModeToggle == null)
+        { var o = GameObject.Find("Toggle_BracingMode"); if (o) bracingModeToggle = o.GetComponent<Toggle>(); }
 
         EnsureBayArraySizes();
         for (int i = 0; i < XBayCount; i++)
@@ -588,6 +654,8 @@ public class MobileSolarFrameApp : MonoBehaviour
         if (equalGapToggle    != null) equalGapToggle.onValueChanged.AddListener(HandleEqualGapToggleChanged);
         if (showConcreteFootingsToggle != null)
             showConcreteFootingsToggle.onValueChanged.AddListener(v => { showConcretePillars = v; ApplySceneState(); });
+        if (bracingModeToggle != null)
+            bracingModeToggle.onValueChanged.AddListener(v => { bracingMode = v ? BracingMode.StayLines : BracingMode.XCrossing; ApplySceneState(); });
 
         // Axis view buttons
         if (viewFrontButton != null) viewFrontButton.onClick.AddListener(() => SetCameraView(CameraView.Front));
@@ -1504,6 +1572,22 @@ public class MobileSolarFrameApp : MonoBehaviour
             bracingRoot = new GameObject("CrossBracing").transform;
             bracingRoot.SetParent(structureRoot, false);
         }
+        
+        // Stay lines root
+        stayLinesRoot = structureRoot.Find("StayLines");
+        if (stayLinesRoot == null)
+        {
+            stayLinesRoot = new GameObject("StayLines").transform;
+            stayLinesRoot.SetParent(structureRoot, false);
+        }
+        
+        // Angle brackets root
+        angleBracketsRoot = structureRoot.Find("AngleBrackets");
+        if (angleBracketsRoot == null)
+        {
+            angleBracketsRoot = new GameObject("AngleBrackets").transform;
+            angleBracketsRoot.SetParent(structureRoot, false);
+        }
 
         if (pillarsRoot == null || beamsRoot == null || railsRoot == null || panelsRoot == null)
         {
@@ -1526,6 +1610,18 @@ public class MobileSolarFrameApp : MonoBehaviour
         for (int i = 0; i < XBayCount; i++)
         {
             if (xBayVisuals[i] == null) xBayVisuals[i] = CreateXBayVisual(i);
+        }
+        
+        // Ensure stay line visual pool (for StayLine bracing mode)
+        for (int i = 0; i < StayLineCount; i++)
+        {
+            if (stayLineVisuals[i] == null) stayLineVisuals[i] = CreateStayLineVisual(i);
+        }
+        
+        // Ensure angle bracket visual pool
+        for (int i = 0; i < AngleBracketCount; i++)
+        {
+            if (angleBracketVisuals[i] == null) angleBracketVisuals[i] = CreateAngleBracketVisual(i);
         }
 
         EnsureStructureMaterials();
@@ -1559,6 +1655,46 @@ public class MobileSolarFrameApp : MonoBehaviour
             DiagB  = dB,
             LabelA = GetOrCreateLabel(dA),
             LabelB = GetOrCreateLabel(dB)
+        };
+    }
+    
+    // Create a stay line visual - vertical structural line (using C-channel shape)
+    private StayLineVisual CreateStayLineVisual(int lineIdx)
+    {
+        Transform lineRoot = stayLinesRoot.Find($"StayLine_{lineIdx}");
+        if (lineRoot == null)
+        {
+            lineRoot = new GameObject($"StayLine_{lineIdx}").transform;
+            lineRoot.SetParent(stayLinesRoot, false);
+        }
+        // Create L-shaped stay line with 2 segments: vertical + top flange
+        Transform verticalPart = GetOrCreateCChannel(lineRoot, "Vertical");
+        Transform topFlange = GetOrCreateCChannel(lineRoot, "TopFlange");
+        return new StayLineVisual
+        {
+            Root = lineRoot,
+            Label = GetOrCreateLabel(verticalPart)
+        };
+    }
+    
+    // Create L-shaped angle bracket visual for column base
+    private AngleBracketVisual CreateAngleBracketVisual(int colIdx)
+    {
+        Transform bracketRoot = angleBracketsRoot.Find($"AngleBracket_{colIdx}");
+        if (bracketRoot == null)
+        {
+            bracketRoot = new GameObject($"AngleBracket_{colIdx}").transform;
+            bracketRoot.SetParent(angleBracketsRoot, false);
+        }
+        // L-shape: vertical web + horizontal flange
+        Transform web = GetOrCreateCChannel(bracketRoot, "Web");
+        Transform flange = GetOrCreateCChannel(bracketRoot, "Flange");
+        return new AngleBracketVisual
+        {
+            Root = bracketRoot,
+            Web = web,
+            Flange = flange,
+            Label = GetOrCreateLabel(web)
         };
     }
 
@@ -1609,6 +1745,8 @@ public class MobileSolarFrameApp : MonoBehaviour
         for (int r = 0; r < RailCount; r++) UpdateRailVisual(railVisuals[r], r);
         UpdatePanelVisuals();
         UpdateBracingVisuals();
+        UpdateStayLineVisuals();
+        UpdateAngleBracketVisuals();
         // Apply base materials ONCE after all geometry is placed,
         // then apply stress colors on top — order matters because
         // sharedMaterial assignment clears MaterialPropertyBlock.
@@ -1871,11 +2009,22 @@ public class MobileSolarFrameApp : MonoBehaviour
         if (bracingRoot == null) return;
         EnsureBayArraySizes();
 
+        // Only show X-crossing bracing when in XCrossing mode
+        bool showXCrossing = bracingMode == BracingMode.XCrossing;
+
         for (int i = 0; i < XBayCount; i++)
         {
             if (xBayVisuals[i] == null) xBayVisuals[i] = CreateXBayVisual(i);
             XBayVisual bv = xBayVisuals[i];
             bool bayOn = bayEnabled[i];
+
+            // Hide all X bay visuals when in StayLine mode
+            if (!showXCrossing)
+            {
+                if (bv.DiagA != null) bv.DiagA.gameObject.SetActive(false);
+                if (bv.DiagB != null) bv.DiagB.gameObject.SetActive(false);
+                continue;
+            }
 
             if (!bayOn)
             {
@@ -1893,6 +2042,150 @@ public class MobileSolarFrameApp : MonoBehaviour
             bv.DiagB.gameObject.SetActive(bayXEnabled[i]);
         }
         // Materials and stress colors are applied by RefreshStructure after all updates
+    }
+    
+    // ── Stay Line Visuals (vertical structural lines) ─────────────────
+    // Stay lines are vertical lines that provide structural support
+    // Each row (front/mid/back) has 4 lines connecting adjacent columns
+    // Line 1: bottom at 8ft, Line 2: top at 7ft (1ft overlap in middle)
+    private void UpdateStayLineVisuals()
+    {
+        if (stayLinesRoot == null) return;
+        
+        // Only show stay lines when in StayLine mode
+        bool showStayLines = bracingMode == BracingMode.StayLines;
+        
+        // Stay line layout:
+        // Row 0 (front/sup 0): Lines 0-3 at heights 8ft, 7ft, 8ft, 7ft
+        // Row 1 (mid/sup 1): Lines 4-7 at heights 8ft, 7ft, 8ft, 7ft  
+        // Row 2 (back/sup 2): Lines 8-11 at heights 8ft, 7ft, 8ft, 7ft
+        // Each row has 4 lines connecting col0-col1 (x2) and col1-col2 (x2)
+        
+        float lineSize = bracingSize;
+        float lineThick = bracingThick;
+        
+        for (int i = 0; i < StayLineCount; i++)
+        {
+            if (stayLineVisuals[i] == null) stayLineVisuals[i] = CreateStayLineVisual(i);
+            StayLineVisual sv = stayLineVisuals[i];
+            
+            sv.Root.gameObject.SetActive(showStayLines);
+            if (!showStayLines) continue;
+            
+            // Determine which row and line type
+            int row = i / StayLinesPerRow; // 0, 1, or 2
+            int lineIdxInRow = i % StayLinesPerRow; // 0, 1, 2, or 3
+            
+            // Line definitions for each row:
+            // lineIdx 0: col0-col1 with 8ft height from bottom
+            // lineIdx 1: col0-col1 with 7ft height from bottom (starts at 8ft, goes to 15ft)
+            // lineIdx 2: col1-col2 with 8ft height from bottom
+            // lineIdx 3: col1-col2 with 7ft height from bottom
+            
+            float height = (lineIdxInRow % 2 == 0) ? StayLineHeight1 : StayLineHeight2;
+            bool isUpperLine = (lineIdxInRow % 2 == 1);
+            
+            // For lines 1 and 3 (upper), we need to offset the height from the top
+            float supportHeight = GetSupportHeight(row);
+            float actualHeight = isUpperLine ? supportHeight - StayLineHeight2 : height;
+            
+            // Column positions
+            int colA = (lineIdxInRow < 2) ? 0 : 1;
+            int colB = (lineIdxInRow < 2) ? 1 : 2;
+            
+            float xA = ColumnXPositions[colA];
+            float xB = ColumnXPositions[colB];
+            float zPos = SupportZPositions[row];
+            float topY = GetSupportTopY(row) - topPlateThick;
+            
+            // Start and end positions for the stay line
+            float startY = isUpperLine ? topY - StayLineHeight1 : basePlateThick + bracingBottomClearance;
+            float endY = isUpperLine ? topY : startY + height;
+            
+            // Position for the line (centered vertically in the bay)
+            float midY = (startY + endY) * 0.5f;
+            float lineLength = endY - startY;
+            
+            if (lineLength < 0.001f)
+            {
+                sv.Root.gameObject.SetActive(false);
+                continue;
+            }
+            
+            // The stay line runs along X axis between two columns
+            float midX = (xA + xB) * 0.5f;
+            sv.Root.localPosition = new Vector3(midX, midY, zPos);
+            sv.Root.localRotation = Quaternion.identity;
+            
+            // Apply C-channel visual with vertical orientation
+            ApplyHGirderVisual(sv.Root, lineLength, lineSize, lineThick, false);
+            
+            // Update label
+            if (sv.Label != null)
+            {
+                ConfigureWorldText(sv.Label, false);
+                sv.Label.text = $"Stay {height:0.#}ft";
+                sv.Label.rectTransform.sizeDelta = new Vector2(72f, 24f);
+                sv.Label.transform.localPosition = new Vector3(0f, lineSize * 20f, 0f);
+                sv.Label.transform.localRotation = Quaternion.Euler(0f, 0f, 0f);
+                sv.Label.transform.localScale = Vector3.one * 0.1f;
+            }
+        }
+    }
+    
+    // ── Angle Bracket Visuals (L-shape at column base) ─────────────────
+    // L-shaped 2-inch angle brackets at the bottom of each column
+    private void UpdateAngleBracketVisuals()
+    {
+        if (angleBracketsRoot == null) return;
+        
+        float angleSize = 2f / 12f; // 2 inches
+        float angleThick = 0.02f;
+        
+        for (int col = 0; col < AngleBracketCount; col++)
+        {
+            if (angleBracketVisuals[col] == null) angleBracketVisuals[col] = CreateAngleBracketVisual(col);
+            AngleBracketVisual av = angleBracketVisuals[col];
+            
+            av.Root.gameObject.SetActive(true);
+            
+            float xPos = ColumnXPositions[col];
+            float baseY = basePlateThick + concretePillarHeight;
+            
+            // L-shape position at column base
+            av.Root.localPosition = new Vector3(xPos, baseY, 0f);
+            av.Root.localRotation = Quaternion.identity;
+            
+            // L-shape: vertical web + horizontal flange
+            // Web: vertical part mounted to pillar
+            // Flange: horizontal part extending outward from column
+            if (av.Web != null)
+            {
+                // Vertical web runs along Y axis
+                ApplyHGirderVisual(av.Web, StayLineHeight1, angleSize, angleThick, false);
+                av.Web.localPosition = new Vector3(0f,StayLineHeight1*0.5f, 0f);
+                av.Web.localRotation = Quaternion.identity;
+            }
+            
+            if (av.Flange != null)
+            {
+                // Horizontal flange extends outward in Z direction
+                ApplyHGirderVisual(av.Flange, StayLineHeight1, angleSize, angleThick, true);
+                av.Flange.localPosition = new Vector3(0f, 0f, StayLineHeight1*0.5f);
+                av.Flange.localRotation = Quaternion.identity;
+            }
+            
+            // Update label
+            if (av.Label != null)
+            {
+                ConfigureWorldText(av.Label, false);
+                av.Label.text = "L-Angle";
+                av.Label.rectTransform.sizeDelta = new Vector2(72f, 24f);
+                av.Label.transform.localPosition = new Vector3(0f, StayLineHeight1 + 0.5f, StayLineHeight1 * 0.5f);
+                av.Label.transform.localRotation = Quaternion.identity;
+                av.Label.transform.localScale = Vector3.one * 0.1f;
+            }
+        }
     }
 
     private void PositionDiagonal(Transform diag, TMP_Text label, Vector3 start, Vector3 end)
@@ -2117,33 +2410,69 @@ public class MobileSolarFrameApp : MonoBehaviour
         }
 
         // ── X-crossing braces — per-diagonal stress ───────────────────────
-        // Diagonal A: tension member (carries lateral load)
-        // Diagonal B: compression member (higher stress, buckling risk)
-        for (int i = 0; i < XBayCount; i++)
+        // Only apply stress colors when in X-Crossing mode
+        if (bracingMode == BracingMode.XCrossing)
         {
-            XBayVisual xv = xBayVisuals[i];
-            if (xv == null) continue;
-
-            BayDef bd = BayDefs[i];
-            bool isSide = (bd.ColA == bd.ColB);
-
-            // Lateral shear in this bay
-            float bayShear = windLoad * (isSide ? 1.2f : 1.0f);
-            // Diagonal force = shear / cos(angle) — approximate with 1.4 factor
-            float diagForce = bayShear * 1.4f;
-            float maxDiagForce = windLoad * 2f;
-
-            // Tension diagonal (DiagA)
-            if (xv.DiagA != null && xv.DiagA.gameObject.activeSelf)
+            // Diagonal A: tension member (carries lateral load)
+            // Diagonal B: compression member (higher stress, buckling risk)
+            for (int i = 0; i < XBayCount; i++)
             {
-                float ts = Mathf.Clamp01(diagForce / maxDiagForce);
-                ColorCChannel(xv.DiagA, ts, new Color(0.5f,0.55f,0.6f), warnColor, dangerColor);
+                XBayVisual xv = xBayVisuals[i];
+                if (xv == null) continue;
+
+                BayDef bd = BayDefs[i];
+                bool isSide = (bd.ColA == bd.ColB);
+
+                // Lateral shear in this bay
+                float bayShear = windLoad * (isSide ? 1.2f : 1.0f);
+                // Diagonal force = shear / cos(angle) — approximate with 1.4 factor
+                float diagForce = bayShear * 1.4f;
+                float maxDiagForce = windLoad * 2f;
+
+                // Tension diagonal (DiagA)
+                if (xv.DiagA != null && xv.DiagA.gameObject.activeSelf)
+                {
+                    float ts = Mathf.Clamp01(diagForce / maxDiagForce);
+                    ColorCChannel(xv.DiagA, ts, new Color(0.5f,0.55f,0.6f), warnColor, dangerColor);
+                }
+                // Compression diagonal (DiagB) — higher stress due to buckling
+                if (xv.DiagB != null && xv.DiagB.gameObject.activeSelf)
+                {
+                    float cs = Mathf.Clamp01(diagForce * 1.35f / maxDiagForce);
+                    ColorCChannel(xv.DiagB, cs, new Color(0.5f,0.55f,0.6f), warnColor, dangerColor);
+                }
             }
-            // Compression diagonal (DiagB) — higher stress due to buckling
-            if (xv.DiagB != null && xv.DiagB.gameObject.activeSelf)
+        }
+        
+        // ── Stay Line braces — per-line stress ────────────────────────────
+        if (bracingMode == BracingMode.StayLines)
+        {
+            for (int i = 0; i < StayLineCount; i++)
             {
-                float cs = Mathf.Clamp01(diagForce * 1.35f / maxDiagForce);
-                ColorCChannel(xv.DiagB, cs, new Color(0.5f,0.55f,0.6f), warnColor, dangerColor);
+                StayLineVisual sv = stayLineVisuals[i];
+                if (sv == null || sv.Root == null || !sv.Root.gameObject.activeSelf) continue;
+                
+                // Stay lines carry tension forces vertically
+                float tensionForce = windLoad * 0.8f;
+                float maxTension = windLoad * 1.5f;
+                float stress = Mathf.Clamp01(tensionForce / maxTension);
+                
+                // Apply stress color to the stay line
+                ApplyHGirderStress(sv.Root, stress, new Color(0.5f,0.55f,0.6f), warnColor, dangerColor);
+            }
+            
+            // ── Angle brackets — base support stress ───────────────────────
+            for (int col = 0; col < AngleBracketCount; col++)
+            {
+                AngleBracketVisual av = angleBracketVisuals[col];
+                if (av == null || av.Root == null || !av.Root.gameObject.activeSelf) continue;
+                
+                // Angle brackets bear the load transfer from pillars to concrete
+                float bracketStress = loadPerPillar / totalLoad * 1.5f;
+                float stress = Mathf.Clamp01(bracketStress);
+                
+                if (av.Web != null) ApplyHGirderStress(av.Web, stress, new Color(0.6f,0.65f,0.7f), warnColor, dangerColor);
+                if (av.Flange != null) ApplyHGirderStress(av.Flange, stress * 0.8f, new Color(0.6f,0.65f,0.7f), warnColor, dangerColor);
             }
         }
 
@@ -2171,53 +2500,69 @@ public class MobileSolarFrameApp : MonoBehaviour
     {
         float rf = 1.0f;
 
-        // Count bays that directly brace this pillar
-        int bayCount = 0, xBayCount2 = 0;
-        for (int i = 0; i < XBayCount; i++)
+        // In StayLine mode, stay lines provide different structural support
+        // Stay lines act as continuous vertical members, reducing moment more effectively
+        if (bracingMode == BracingMode.StayLines)
         {
-            if (!bayEnabled[i]) continue;
-            BayDef bd = BayDefs[i];
-            bool isSide = (bd.ColA == bd.ColB);
+            // Stay lines provide strong lateral support
+            // Each stay line reduces moment by ~30%
+            int stayLineCount = StayLinesPerRow; // 4 lines per row
+            rf *= Mathf.Pow(0.70f, stayLineCount);
+            
+            // Stay lines start from 8ft, so there's less unbraced length at base
+            float stayLineStart = StayLineHeight2; // 7ft from bottom
+            rf *= Mathf.Lerp(1.0f, 0.6f, Mathf.Clamp01(stayLineStart / GetSupportHeight(sup)));
+        }
+        else
+        {
+            // X-Crossing bracing mode
+            // Count bays that directly brace this pillar
+            int bayCount = 0, xBayCount2 = 0;
+            for (int i = 0; i < XBayCount; i++)
+            {
+                if (!bayEnabled[i]) continue;
+                BayDef bd = BayDefs[i];
+                bool isSide = (bd.ColA == bd.ColB);
 
-            bool touches = false;
-            if (isSide)
-            {
-                // Side bay touches this pillar if same column and spans this support
-                touches = (bd.ColA == col) &&
-                          (bd.SupportA == sup || bd.SupportB == sup);
-            }
-            else
-            {
-                // Z-plane bay touches this pillar if same support and adjacent column
-                touches = (bd.SupportA == sup) &&
-                          (bd.ColA == col || bd.ColB == col);
+                bool touches = false;
+                if (isSide)
+                {
+                    // Side bay touches this pillar if same column and spans this support
+                    touches = (bd.ColA == col) &&
+                              (bd.SupportA == sup || bd.SupportB == sup);
+                }
+                else
+                {
+                    // Z-plane bay touches this pillar if same support and adjacent column
+                    touches = (bd.SupportA == sup) &&
+                              (bd.ColA == col || bd.ColB == col);
+                }
+
+                if (touches)
+                {
+                    bayCount++;
+                    if (bayXEnabled[i]) xBayCount2++;
+                }
             }
 
-            if (touches)
+            // Each single diagonal reduces moment by ~25%
+            // Each X-crossing (2 diagonals) reduces by ~40%
+            if (bayCount > 0)
             {
-                bayCount++;
-                if (bayXEnabled[i]) xBayCount2++;
+                rf *= Mathf.Pow(0.75f, bayCount);
+                if (xBayCount2 > 0) rf *= Mathf.Pow(0.80f, xBayCount2);
             }
+
+            // Clearance effect: larger bottom clearance = less effective bracing
+            float unbraced = bracingBottomClearance / GetSupportHeight(sup);
+            rf *= Mathf.Lerp(1.0f, 1.3f, Mathf.Clamp01(unbraced));
+
+            // Top clearance: less effect but still reduces brace effectiveness
+            float topUnbraced = bracingTopClearance / GetSupportHeight(sup);
+            rf *= Mathf.Lerp(1.0f, 1.15f, Mathf.Clamp01(topUnbraced));
         }
 
-        // Each single diagonal reduces moment by ~25%
-        // Each X-crossing (2 diagonals) reduces by ~40%
-        if (bayCount > 0)
-        {
-            rf *= Mathf.Pow(0.75f, bayCount);
-            if (xBayCount2 > 0) rf *= Mathf.Pow(0.80f, xBayCount2);
-        }
-
-        // Clearance effect: larger bottom clearance = less effective bracing
-        // (brace starts higher, leaving more unbraced length at base)
-        float unbraced = bracingBottomClearance / GetSupportHeight(sup);
-        rf *= Mathf.Lerp(1.0f, 1.3f, Mathf.Clamp01(unbraced));
-
-        // Top clearance: less effect but still reduces brace effectiveness
-        float topUnbraced = bracingTopClearance / GetSupportHeight(sup);
-        rf *= Mathf.Lerp(1.0f, 1.15f, Mathf.Clamp01(topUnbraced));
-
-        // Concrete footing benefit
+        // Concrete footing benefit (applies to both modes)
         if (showConcretePillars && concretePillarHeight > 0f)
         {
             float volRatio = Mathf.Clamp01(
@@ -2253,6 +2598,21 @@ public class MobileSolarFrameApp : MonoBehaviour
         var bot = root.Find("Bot");
         if (bot != null) ApplyColorToSingleRenderer(bot.GetComponent<Renderer>(),
             StressColor(stress * 0.9f, safe, warn, danger));
+    }
+    
+    // Apply stress color to H-Girder visual (Web, F1, F2)
+    private void ApplyHGirderStress(Transform root, float stress, Color safe, Color warn, Color danger)
+    {
+        if (root == null) return;
+        var web = root.Find("Web");
+        if (web != null) ApplyColorToSingleRenderer(web.GetComponent<Renderer>(),
+            StressColor(stress * 0.9f, safe, warn, danger));
+        var f1 = root.Find("F1");
+        if (f1 != null) ApplyColorToSingleRenderer(f1.GetComponent<Renderer>(),
+            StressColor(stress, safe, warn, danger));
+        var f2 = root.Find("F2");
+        if (f2 != null) ApplyColorToSingleRenderer(f2.GetComponent<Renderer>(),
+            StressColor(stress * 0.95f, safe, warn, danger));
     }
 
     private void ApplyColorToSingleRenderer(Renderer r, Color color)
@@ -2293,6 +2653,16 @@ public class MobileSolarFrameApp : MonoBehaviour
             if (x == null) continue;
             ApplyMaterialToBranch(x.DiagA, cChannelMaterial);
             ApplyMaterialToBranch(x.DiagB, cChannelMaterial);
+        }
+        foreach (var sl in stayLineVisuals)
+        {
+            if (sl == null || sl.Root == null) continue;
+            ApplyMaterialToBranch(sl.Root, cChannelMaterial);
+        }
+        foreach (var ab in angleBracketVisuals)
+        {
+            if (ab == null || ab.Root == null) continue;
+            ApplyMaterialToBranch(ab.Root, cChannelMaterial);
         }
     }
 

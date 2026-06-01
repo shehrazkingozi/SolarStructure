@@ -52,6 +52,21 @@ public static class MobileSolarFrameSceneSetup
     [MenuItem("Tools/Mobile Solar Frame/Setup Sample Scene UI")]
     public static void SetupSampleSceneUi() => RunSetup(saveScene: true);
 
+    [MenuItem("Tools/Mobile Solar Frame/Build Structure Now")]
+    public static void BuildStructureNow()
+    {
+        MobileSolarFrameApp app = UnityEngine.Object.FindObjectOfType<MobileSolarFrameApp>();
+        if (app != null)
+        {
+            app.ForceRebuildStructure();
+            Debug.Log("Structure rebuilt successfully.");
+        }
+        else
+        {
+            Debug.LogWarning("MobileSolarFrameApp not found in scene.");
+        }
+    }
+
     [InitializeOnLoadMethod]
     private static void AutoSetupInOpenEditor()
     {
@@ -170,12 +185,16 @@ public static class MobileSolarFrameSceneSetup
         CreateNumericRow(s5, new FieldConfig(MobileSolarFieldId.ConcretePillarWidth,  "Width X (ft)",                  0.2f, 5f), font, uiSprite);
         CreateNumericRow(s5, new FieldConfig(MobileSolarFieldId.ConcretePillarDepth,  "Depth Z (ft)",                  0.2f, 5f), font, uiSprite);
 
-        // ── Section 6: X-Crossing Bracing ────────────────────────────────
-        var s6 = CreateSection(scrollContent, "Section_Bracing", "6. X-Crossing Bracing", font, uiSprite);
-        CreateNumericRow(s6, new FieldConfig(MobileSolarFieldId.BracingBottomClearance, "Bottom Clearance (ft)", 0f,   8f),  font, uiSprite);
-        CreateNumericRow(s6, new FieldConfig(MobileSolarFieldId.BracingTopClearance,    "Top Clearance (ft)",    0f,   4f),  font, uiSprite);
-        CreateNumericRow(s6, new FieldConfig(MobileSolarFieldId.BracingSize,            "C-Channel Size",        0.1f, 0.5f),font, uiSprite);
-        CreateNumericRow(s6, new FieldConfig(MobileSolarFieldId.BracingThick,           "Thickness",             0.005f,0.1f),font,uiSprite);
+        // ── Section 6: Bracing Mode Selection ──────────────────────────────
+        var s6 = CreateSection(scrollContent, "Section_BracingMode", "6. Bracing Mode", font, uiSprite);
+        Toggle bracingModeToggle = CreateToggleRow(s6, "Toggle_BracingMode", "Use Stay Lines (OFF = X-Crossing)", font, uiSprite);
+
+        // ── Section 7: X-Crossing Bracing ────────────────────────────────
+        var s7 = CreateSection(scrollContent, "Section_Bracing", "7. X-Crossing Bracing", font, uiSprite);
+        CreateNumericRow(s7, new FieldConfig(MobileSolarFieldId.BracingBottomClearance, "Bottom Clearance (ft)", 0f,   8f),  font, uiSprite);
+        CreateNumericRow(s7, new FieldConfig(MobileSolarFieldId.BracingTopClearance,    "Top Clearance (ft)",    0f,   4f),  font, uiSprite);
+        CreateNumericRow(s7, new FieldConfig(MobileSolarFieldId.BracingSize,            "C-Channel Size",        0.1f, 0.5f),font, uiSprite);
+        CreateNumericRow(s7, new FieldConfig(MobileSolarFieldId.BracingThick,           "Thickness",             0.005f,0.1f),font,uiSprite);
 
         // Per-bay toggles
         var bayToggleArr  = new Toggle[XBayCount];
@@ -183,12 +202,12 @@ public static class MobileSolarFrameSceneSetup
         for (int i = 0; i < XBayCount; i++)
         {
             // Default: all bays on
-            bayToggleArr[i]  = CreateToggleRow(s6, $"Toggle_Bay{i}",  $"  {BayNames[i]}",            font, uiSprite);
-            bayXToggleArr[i] = CreateToggleRow(s6, $"Toggle_BayX{i}", $"    + X-Cross {BayNames[i]}", font, uiSprite);
+            bayToggleArr[i]  = CreateToggleRow(s7, $"Toggle_Bay{i}",  $"  {BayNames[i]}",            font, uiSprite);
+            bayXToggleArr[i] = CreateToggleRow(s7, $"Toggle_BayX{i}", $"    + X-Cross {BayNames[i]}", font, uiSprite);
             bayToggleArr[i].isOn  = true;
             bayXToggleArr[i].isOn = true;
         }
-        Button smartDesignButton = CreateButton(s6, SmartDesignButtonName, "SMART 6 x 20FT BRACING", font, uiSprite);
+        Button smartDesignButton = CreateButton(s7, SmartDesignButtonName, "SMART 6 x 20FT BRACING", font, uiSprite);
 
         // ── Structure ────────────────────────────────────────────────────
         Transform structureRoot = CreateOrReplaceStructureRoot(font);
@@ -205,6 +224,7 @@ public static class MobileSolarFrameSceneSetup
         so.FindProperty("isControlPanelVisible").boolValue            = true;
         so.FindProperty("structureRoot").objectReferenceValue         = structureRoot;
         so.FindProperty("showConcreteFootingsToggle").objectReferenceValue = showConcreteFootingsToggle;
+        so.FindProperty("bracingModeToggle").objectReferenceValue   = bracingModeToggle;
         so.FindProperty("viewFrontButton").objectReferenceValue       = viewFrontButton;
         so.FindProperty("viewSideButton").objectReferenceValue        = viewSideButton;
         so.FindProperty("viewTopButton").objectReferenceValue         = viewTopButton;

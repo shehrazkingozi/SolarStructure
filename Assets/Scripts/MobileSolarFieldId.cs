@@ -26,5 +26,6 @@ public enum MobileSolarFieldId
     BracingBottomClearance,
     BracingTopClearance,
     BracingSize,
-    BracingThick
+    BracingThick,
+    BracingMode // X-Crossing vs Stay Lines toggle
 }
